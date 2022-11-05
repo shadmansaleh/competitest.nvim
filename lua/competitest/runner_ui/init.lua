@@ -15,6 +15,8 @@ function RunnerUI:new(interface, restore_winid)
 		ui_initialized = false,
 		ui_visible = false,
 		viewer_initialized = false,
+		diff_viewer_initialized = false,
+		diff_viewer_visible = false,
 		viewer_visible = false,
 		viewer_content = nil,
 		restore_winid = restore_winid,
@@ -29,6 +31,8 @@ function RunnerUI:new(interface, restore_winid)
 			eo = nil, -- expected output
 			tc = nil, -- testcases selector
 			vw = nil, -- viewer popup
+			dvwl = nil, -- diff view left
+			dvwr = nil, -- diff view right
 		},
 		tcdata = nil, -- table containing testcases data and results
 	}
@@ -50,11 +54,13 @@ end
 function RunnerUI:resize_ui()
 	local cursor_position = self.ui_visible and api.nvim_win_get_cursor(self.windows.tc.winid) -- restore cursor position later
 	local was_viewer_visible = self.viewer_visible -- make viewer visible later
+	local was_diff_viewer_visible = self.diff_viewer_visible -- make viewer visible later
 	self:delete()
 	if cursor_position then -- if cursor_position isn't nil ui was visible
 		self:show_ui()
 		vim.schedule(function()
 			self.make_viewer_visible = was_viewer_visible -- make update_ui() open viewer after updating details
+			self.make_diff_viewer_visible = was_diff_viewer_visible -- make update_ui() open diff viewer after updating details
 			api.nvim_win_set_cursor(self.windows.tc.winid, cursor_position)
 		end)
 	end
@@ -75,7 +81,7 @@ function RunnerUI:show_ui()
 			tc = "Testcases", -- testcases selector
 		}
 		for n, w in pairs(self.windows) do
-			if n ~= "vw" then
+			if n ~= "vw" and n ~= 'dvwr' and n ~= 'dvwl' then
 				api.nvim_buf_set_var(w.bufnr, "competitest_title", windows_names[n])
 				api.nvim_buf_set_name(w.bufnr, "CompetiTest" .. string.gsub(windows_names[n], " ", "") .. w.bufnr)
 			end
@@ -93,6 +99,17 @@ function RunnerUI:show_ui()
 				self.windows.vw:hide()
 				api.nvim_set_current_win(self.windows.tc.winid)
 				self.viewer_visible = false
+			elseif self.diff_viewer_visible then
+				vim.api.nvim_win_call(self.windows.dvwr.winid, function ()
+					vim.cmd('diffoff')
+				end)
+				vim.api.nvim_win_call(self.windows.dvwl.winid, function ()
+					vim.cmd('diffoff')
+				end)
+				self.windows.dvwl:hide()
+				self.windows.dvwr:hide()
+				api.nvim_set_current_win(self.windows.tc.winid)
+				self.diff_viewer_visible = false
 			else
 				self:hide_ui()
 			end
@@ -101,7 +118,7 @@ function RunnerUI:show_ui()
 		-- close windows keymaps
 		for _, map in ipairs(self.runner.config.runner_ui.mappings.close) do
 			for n, w in pairs(self.windows) do
-				if n ~= "vw" then
+				if n ~= "vw" and n ~= "dvwr" and n ~= "dvwl" then
 					w:map("n", map, hide_ui, { noremap = true })
 				end
 			end
@@ -170,6 +187,12 @@ function RunnerUI:show_ui()
 		for _, map in ipairs(self.runner.config.runner_ui.mappings.view_stderr) do
 			open_viewer(map, "se")
 		end
+		-- view diff in a bigger window keymaps
+		for _, map in ipairs(self.runner.config.runner_ui.mappings.view_diff) do
+			self.windows.tc:map("n", map, function()
+				self:show_diff_viewer_popup()
+			end, { noremap = true })
+		end
 
 		self.windows.tc:on(nui_event.CursorMoved, function()
 			local tcindex = get_testcase_index_by_line()
@@ -201,6 +224,7 @@ function RunnerUI:hide_ui()
 		end
 		self.ui_visible = false
 		self.viewer_visible = false
+		self.diff_viewer_visible = false
 		api.nvim_set_current_win(self.restore_winid or 0)
 	end
 end
@@ -216,7 +240,9 @@ function RunnerUI:delete()
 	self.ui_initialized = false
 	self.ui_visible = false
 	self.viewer_initialized = false
+	self.diff_viewer_initialized = false
 	self.viewer_visible = false
+	self.diff_viewer_visible = false
 	api.nvim_set_current_win(self.restore_winid or 0)
 end
 
@@ -275,6 +301,63 @@ function RunnerUI:show_viewer_popup(window_name)
 		self.viewer_visible = true
 	end
 	api.nvim_set_current_win(self.windows.vw.winid)
+end
+
+---Open diff popup
+function RunnerUI:show_diff_viewer_popup()
+	if not self.diff_viewer_initialized then
+		local vim_width, vim_height = utils.get_ui_size()
+		local diff_viewer_popup_settings = {
+			bufnr = self.windows.so.bufnr,
+			zindex = 55, -- popup ui has zindex 50
+			border = {
+				style = self.runner.config.floating_border,
+				highlight = self.runner.config.floating_border_highlight,
+				text = {
+					top = ' Output ',
+					top_align = "center",
+				},
+			},
+			relative = "editor",
+			size = {
+				width = math.floor(vim_width * self.runner.config.runner_ui.viewer.width/2 + 0.5),
+				height = math.floor(vim_height * self.runner.config.runner_ui.viewer.height + 0.5),
+			},
+			position = {col = ((vim_width - math.floor(vim_width * self.runner.config.runner_ui.viewer.width)) / 2) - 2, row = '50%'},
+			win_options = {
+				number = self.runner.config.runner_ui.viewer.show_nu,
+				relativenumber = self.runner.config.runner_ui.viewer.show_rnu,
+			},
+		}
+
+		self.windows.dvwl = require("nui.popup")(diff_viewer_popup_settings)
+		self.windows.dvwl:mount()
+
+		diff_viewer_popup_settings.bufnr = self.windows.eo.bufnr
+		diff_viewer_popup_settings.border.text.top = ' Expected Output '
+		diff_viewer_popup_settings.position.col = diff_viewer_popup_settings.position.col + math.floor(vim_width * self.runner.config.runner_ui.viewer.width/2 ) + 2
+		self.windows.dvwr = require("nui.popup")(diff_viewer_popup_settings)
+		self.windows.dvwr:mount()
+		self.diff_viewer_initialized = true
+		self.diff_viewer_visible = true
+			vim.api.nvim_win_call(self.windows.dvwr.winid, function ()
+				vim.cmd('diffthis')
+			end)
+			vim.api.nvim_win_call(self.windows.dvwl.winid, function ()
+				vim.cmd('diffthis')
+			end)
+	elseif not self.diff_viewer_visible then
+		self.windows.dvwl:show()
+		self.windows.dvwr:show()
+		self.diff_viewer_visible = true
+		vim.api.nvim_win_call(self.windows.dvwr.winid, function ()
+			vim.cmd('diffthis')
+		end)
+		vim.api.nvim_win_call(self.windows.dvwl.winid, function ()
+			vim.cmd('diffthis')
+		end)
+	end
+	api.nvim_set_current_win(self.windows.dvwl.winid)
 end
 
 ---Return a string of length len, starting with str.
@@ -366,6 +449,10 @@ function RunnerUI:update_ui()
 		if self.make_viewer_visible then
 			self.make_viewer_visible = nil
 			self:show_viewer_popup()
+		end
+		if self.make_diff_viewer_visible then
+			self.make_diff_viewer_visible = nil
+			self:show_diff_viewer_popup()
 		end
 	end)
 end

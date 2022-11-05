@@ -122,7 +122,7 @@ end
 -- Show popup UI
 function M.show_ui(windows)
 	for n, w in pairs(windows) do
-		if n ~= "vw" then -- show ui but not viewer popup
+		if n ~= "vw" and n ~= "dvwl" and n ~= "dvwr" then -- show ui but not viewer popup
 			w:show()
 		end
 	end

@@ -29,6 +29,7 @@ function RunnerUI:new(interface, restore_winid)
 			eo = nil, -- expected output
 			tc = nil, -- testcases selector
 			vw = nil, -- viewer popup
+			di = nil, -- diff viewer
 		},
 		tcdata = nil, -- table containing testcases data and results
 	}
@@ -73,6 +74,7 @@ function RunnerUI:show_ui()
 			se = "Errors", -- standard error
 			eo = "Expected Output", -- expected output
 			tc = "Testcases", -- testcases selector
+			di = "Diff", -- Diff
 		}
 		for n, w in pairs(self.windows) do
 			if n ~= "vw" then
@@ -170,6 +172,10 @@ function RunnerUI:show_ui()
 		for _, map in ipairs(self.runner.config.runner_ui.mappings.view_stderr) do
 			open_viewer(map, "se")
 		end
+		-- view diff in a bigger window keymaps
+		for _, map in ipairs(self.runner.config.runner_ui.mappings.view_diff) do
+			open_viewer(map, "di")
+		end
 
 		self.windows.tc:on(nui_event.CursorMoved, function()
 			local tcindex = get_testcase_index_by_line()
@@ -264,6 +270,9 @@ function RunnerUI:show_viewer_popup(window_name)
 			},
 		}
 
+		if window_name == 'di' then
+			viewer_popup_settings.buf_options = {syntax = 'diff'}
+		end
 		self.windows.vw = require("nui.popup")(viewer_popup_settings)
 		self.windows.vw:mount()
 		self.viewer_initialized = true
@@ -361,6 +370,7 @@ function RunnerUI:update_ui()
 			set_buf_content(self.windows.eo.bufnr, data.expout)
 			set_buf_content(self.windows.si.bufnr, data.stdin)
 			set_buf_content(self.windows.se.bufnr, data.stderr)
+			set_buf_content(self.windows.di.bufnr, data.diff)
 		end
 
 		if self.make_viewer_visible then

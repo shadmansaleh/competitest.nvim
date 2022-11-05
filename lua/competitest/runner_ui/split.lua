@@ -32,6 +32,7 @@ function M.init_ui(windows, config, init_winid)
 	settings.so = vim.deepcopy(split_settings)
 	settings.se = vim.deepcopy(split_settings)
 	settings.eo = vim.deepcopy(split_settings)
+	settings.di = vim.deepcopy(split_settings)
 
 	---Get first windows in the given layout
 	---@param layout table: layout description
@@ -111,6 +112,10 @@ function M.init_ui(windows, config, init_winid)
 	vim.wo[windows[fw].winid]["winfixwidth"] = true
 	vim.wo[windows[fw].winid]["winfixheight"] = true
 
+	-- create diff window. but don't mount it
+	settings.di.top = ' Diff '
+	windows.di = nui_split(settings.di)
+	
 	local old_equalalways = vim.o.equalalways
 	vim.o.equalalways = false
 	create_layout(current_layout, windows[fw].winid, is_split_vertical)

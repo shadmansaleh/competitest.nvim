@@ -112,6 +112,10 @@ function M.init_ui(windows, config)
 	popup_settings.position = positions["se"]
 	windows.se = nui_popup(popup_settings)
 
+	-- diff popup
+	popup_settings.border.text.top = " Diff "
+	windows.di = nui_popup(popup_settings)
+
 	windows.so:mount()
 	windows.eo:mount()
 	windows.si:mount()
